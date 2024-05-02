@@ -1,0 +1,354 @@
+from datetime import date, datetime
+import csv, json, xlsxwriter
+
+doctors = []
+nurses = []
+statuses = []
+
+
+def importData():
+    global statuses
+    doctors_f = open('res/doktori.txt', 'r')
+    nurses_f = open('res/sestre.txt', 'r')
+    statuses_f = open('res/statusi.txt', 'r')
+    doctors.extend(doctors_f.read().splitlines())
+    doctors_f.close()
+    nurses.extend(nurses_f.read().splitlines())
+    nurses_f.close()
+    csvreader = csv.reader(statuses_f)
+    statuses = next(csvreader)
+    del csvreader
+    statuses_f.close()
+
+
+def reverseDict(d: dict) -> dict:
+    reversed_dict = {}
+    while d:
+        key, value = d.popitem()
+        reversed_dict[value] = key
+    return reversed_dict
+
+
+def mapMonth(month: int):
+    match month:
+        case 1:
+            return 'januar'
+        case 2:
+            return 'februar'
+        case 3:
+            return 'mart'
+        case 4:
+            return 'april'
+        case 5:
+            return 'maj'
+        case 6:
+            return 'jun'
+        case 7:
+            return 'jul'
+        case 8:
+            return 'avgust'
+        case 9:
+            return 'septembar'
+        case 10:
+            return 'oktobar'
+        case 11:
+            return 'nobembar'
+        case 12:
+            return 'decembar'
+
+
+def mapStatusFull(status: str):
+    match status:
+        case 'L':
+            return 'Ležeći - C1'
+        case 'A':
+            return 'Ambulanta'
+        case 'G':
+            return 'Gastro'
+        case 'DB':
+            return 'Dnevna Bolnica - C1'
+        case 'H':
+            return 'Hematologija'
+
+
+class Patient:
+
+    def __init__(self, dt: date, name: str, surname: str, status: int, doctor: int, nurse: int):
+        self.dt: date = dt
+        self.name: str = name
+        self.surname: str = surname
+        self.status: int = status
+        self.doctor: int = doctor
+        self.nurse: int = nurse
+
+    def toDict(self) -> dict:
+        return {
+            'date': self.dt.strftime('%d/%m/%Y'),
+            'name': self.name,
+            'surname': self.surname,
+            'status': self.status,
+            'doctor': self.doctor,
+            'nurse': self.nurse
+        }
+
+
+class Report:
+    def __init__(self, month: int, year: int):
+        self.month: int = month
+        self.year: int = year
+        self.patients = list()
+        self.statusMap = dict()
+        self.statusNumOfPatients = dict()
+
+    def save(self, filePath: str):
+        pass
+
+    def load(self, filePath: str):
+        pass
+
+    def exportToXLSX(self, filePath: str):
+        pass
+
+
+class DXA(Report):
+
+    def __init__(self, month: int, year: int):
+        super().__init__(month=month, year=year)
+        self.doctorsMap = dict()
+        self.nursesMap = dict()
+        self.doctorsNumOfPatients = dict()
+        self.nursesNumOfPatients = dict()
+        self.statusNumOfPatients = dict()
+        self.mapWorkersAndInit()
+
+    def mapWorkersAndInit(self):
+        for i in range(len(doctors)):
+            self.doctorsMap[doctors[i]] = i
+            self.doctorsNumOfPatients[i] = 0
+
+        for i in range(len(nurses)):
+            self.nursesMap[nurses[i]] = i
+            self.nursesNumOfPatients[i] = 0
+
+        for i in range(len(statuses)):
+            self.statusMap[statuses[i]] = i
+            self.statusNumOfPatients[i] = 0
+
+    def addPatient(self, dt: date, name: str, surname: str, status: str, doctor: str, nurse: str):
+        mappedDoctor: int = self.doctorsMap[doctor]
+        mappedNurse: int = self.nursesMap[nurse]
+        mappedStatus: int = self.statusMap[status]
+        self.patients.append(Patient(dt=dt,
+                                     name=name,
+                                     surname=surname,
+                                     status=mappedStatus,
+                                     doctor=mappedDoctor,
+                                     nurse=mappedNurse))
+        self.doctorsNumOfPatients[mappedDoctor] = self.doctorsNumOfPatients[mappedDoctor] + 1
+        self.nursesNumOfPatients[mappedNurse] = self.nursesNumOfPatients[mappedNurse] + 1
+        self.statusNumOfPatients[mappedStatus] = self.statusNumOfPatients[mappedStatus] + 1
+
+    def removePatientByIndex(self, index: int):
+        patient: Patient = self.patients.pop(index)
+        self.doctorsNumOfPatients[patient.doctor] = self.doctorsNumOfPatients[patient.doctor] - 1
+        self.nursesNumOfPatients[patient.nurse] = self.nursesNumOfPatients[patient.nurse] - 1
+        self.statusNumOfPatients[patient.status] = self.statusNumOfPatients[patient.status] - 1
+
+    def save(self, filePath: str):
+        file = open(filePath, 'w')
+        serializablePatients = [p.toDict() for p in self.patients]
+        jsonSave = {
+            'month': self.month,
+            'year': self.year,
+            'doctorsMap': self.doctorsMap,
+            'nursesMap': self.nursesMap,
+            'statusesMap': self.statusMap,
+            'doctorsNumOfPatients': self.doctorsNumOfPatients,
+            'nursesNumOfPatients': self.nursesNumOfPatients,
+            'statusNumOfPatients': self.statusNumOfPatients,
+            'patients': serializablePatients
+        }
+        json.dump(jsonSave, file)
+        file.close()
+
+    def load(self, filePath: str):
+        file = open(filePath, 'r')
+        jsonLoad = json.load(file)
+        file.close()
+        self.month = jsonLoad['month']
+        self.year = jsonLoad['year']
+        self.doctorsMap = jsonLoad['doctorsMap']
+        self.nursesMap = jsonLoad['nursesMap']
+        self.statusMap = jsonLoad['statusesMap']
+        self.doctorsNumOfPatients = jsonLoad['doctorsNumOfPatients']
+        self.nursesNumOfPatients = jsonLoad['nursesNumOfPatients']
+        self.statusNumOfPatients = jsonLoad['statusNumOfPatients']
+        self.patients = []
+        for p in jsonLoad['patients']:
+            self.patients.append(Patient(dt=datetime.strptime(p['date'], '%d/%m/%Y').date(),
+                                         name=p['name'],
+                                         surname=p['surname'],
+                                         status=p['status'],
+                                         doctor=p['doctor'],
+                                         nurse=p['nurse']))
+
+    def exportToXLSX(self, filePath: str):
+        workbook = xlsxwriter.Workbook(filePath)
+        worksheet = workbook.add_worksheet(mapMonth(self.month).upper())
+        header_format1 = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'bold': 'true',
+            'font_size': 11
+        })
+
+        header_format2 = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'bold': 'true',
+            'font_size': 14
+        })
+
+        data_format = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'font_size': 11
+        })
+
+        date_format = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'font_size': 11,
+            'num_format': 'd.m.yyyy'
+        })
+
+        worksheet.merge_range(0, 0, 1, 12,
+                              'ODSEK ZA ENDOKRINOLOGIJU KARDIOVASKULARNOG SISTEMA I OSTEODENZITOMETRIJU',
+                              header_format1)
+        worksheet.merge_range(2, 0, 3, 12,
+                              f'MESEČNI IZVEŠTAJ ZA {mapMonth(self.month).upper()} {self.year} DXA',
+                              header_format2)
+
+        worksheet.merge_range(4, 0, 5, 0, 'Datum', header_format1)
+        worksheet.merge_range(4, 1, 5, 3, 'Prezime i ime pacijenta', header_format1)
+        worksheet.merge_range(4, 4, 5, 4, 'Status', header_format1)
+        worksheet.merge_range(4, 5, 5, 8, 'Lekar', header_format1)
+        worksheet.merge_range(4, 9, 5, 12, 'Medicinska sestra-tehničar', header_format1)
+        currentRow = 6
+
+        reverseMapStatus = reverseDict(self.statusMap)
+        reverseMapDoctor = reverseDict(self.doctorsMap)
+        reverseMapNurse = reverseDict(self.nursesMap)
+
+        for patient in self.patients:
+            worksheet.write_datetime(currentRow, 0, patient.dt, date_format)
+            worksheet.merge_range(currentRow, 1, currentRow, 3, f'{patient.surname} {patient.name}', data_format)
+            worksheet.write_string(currentRow, 4, reverseMapStatus[patient.status], data_format)
+            worksheet.merge_range(currentRow, 5, currentRow, 8, reverseMapDoctor[patient.doctor], data_format)
+            worksheet.merge_range(currentRow, 9, currentRow, 12, reverseMapNurse[patient.nurse], data_format)
+            currentRow += 1
+
+        doctorSumNumPatients = 0
+        nurseSumNumPatients = 0
+
+        docs = {}
+        nurs = {}
+        s = {}
+
+        for doc, num in self.doctorsNumOfPatients.items():
+            if num != 0:
+                docs[reverseMapDoctor[doc]] = num
+                doctorSumNumPatients += num
+
+        for nur, num in self.nursesNumOfPatients.items():
+            if num != 0:
+                nurs[reverseMapNurse[nur]] = num
+                nurseSumNumPatients += num
+
+        for stat, num in self.statusNumOfPatients.items():
+            if num != 0:
+                s[reverseMapStatus[stat]] = num
+
+        if (currentRow + len(docs) + len(nurs) + 3) > 60:
+            currentRow = 60
+        else:
+            currentRow += 2
+
+        worksheet.merge_range(currentRow, 0, currentRow, 2, 'Ukupan broj pacijenata', header_format1)
+        worksheet.write_number(currentRow, 3, doctorSumNumPatients, header_format1)
+
+        rowForStatuses = currentRow
+        currentRow += 1
+
+
+        for doc, num in docs.items():
+            worksheet.merge_range(currentRow, 0, currentRow, 2, doc, data_format)
+            worksheet.write_number(currentRow, 3, num, data_format)
+            currentRow += 1
+
+        currentRow += 1
+
+        worksheet.merge_range(currentRow, 0, currentRow, 2, 'Ukupan broj pacijenata', header_format1)
+        worksheet.write_number(currentRow, 3, nurseSumNumPatients, header_format1)
+
+        currentRow += 1
+
+        for nur, num in nurs.items():
+            worksheet.merge_range(currentRow, 0, currentRow, 2, nur, data_format)
+            worksheet.write_number(currentRow, 3, num, data_format)
+            currentRow += 1
+
+        for st, num in s.items():
+            worksheet.write_string(rowForStatuses, 5, st, data_format)
+            worksheet.merge_range(rowForStatuses, 6, rowForStatuses, 8, mapStatusFull(st), data_format)
+            worksheet.write_number(rowForStatuses, 9, num, data_format)
+            rowForStatuses += 1
+
+        workbook.close()
+
+
+class ReportManager:
+    def __init__(self):
+        self.dxaReports = {}
+        self.abpmReports = {}
+
+    def create(self, month: int, year: int, reportType: int):
+        if reportType == 0:
+            if (month, year) in self.dxaReports.keys():
+                pass
+                # todo confirm overwrite
+            self.dxaReports[(month, year)] = DXA(month=month, year=year)
+        else:
+            pass
+            # todo ABPM
+
+    def save(self, report: Report, filePath: str):
+        report.save(filePath=filePath)
+
+    def load(self, filePath: str, reportType: int):
+        pass
+
+    def exportToXLSX(self, report: Report, filePath: str):
+        pass
+
+
+if __name__ == "__main__":
+    importData()
+    dxa = DXA(4, 2024)
+    dxa.addPatient(dt=date.today(), name='Marko', surname='Gloginja', status='DB', doctor='Pavlovic Natalija',
+                   nurse='Simjanovic Sandra')
+    dxa.addPatient(dt=date.today(), name='Katarina', surname='Gloginja', status='L', doctor='Pavlovic Natalija',
+                   nurse='Simjanovic Sandra')
+    dxa.addPatient(dt=date.today(), name='Nikola', surname='Velickovic', status='G', doctor='Pavlovic Natalija',
+                   nurse='Simjanovic Sandra')
+    # dxa.removePatientByIndex(1)
+    dxa.exportToXLSX('test.xlsx')
+    pass
