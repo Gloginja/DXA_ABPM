@@ -1,5 +1,9 @@
+import csv
+import json
+import traceback
+
+import xlsxwriter
 from datetime import date, datetime
-import csv, json, xlsxwriter
 
 doctors = []
 nurses = []
@@ -73,13 +77,13 @@ def mapStatusFull(status: str):
 
 class Patient:
 
-    def __init__(self, dt: date, name: str, surname: str, status: int, doctor: int, nurse: int):
+    def __init__(self, dt: date, name: str, surname: str, status: int, doctor: int | None, nurse: int | None):
         self.dt: date = dt
         self.name: str = name
         self.surname: str = surname
         self.status: int = status
-        self.doctor: int = doctor
-        self.nurse: int = nurse
+        self.doctor: int | None = doctor
+        self.nurse: int | None = nurse
 
     def toDict(self) -> dict:
         return {
@@ -99,6 +103,9 @@ class Report:
         self.patients = list()
         self.statusMap = dict()
         self.statusNumOfPatients = dict()
+
+    def addPatient(self, dt: date, name: str, surname: str, status: str, doctor: str | None, nurse: str | None):
+        pass
 
     def save(self, filePath: str):
         pass
@@ -123,16 +130,16 @@ class DXA(Report):
 
     def mapWorkersAndInit(self):
         for i in range(len(doctors)):
-            self.doctorsMap[doctors[i]] = i
-            self.doctorsNumOfPatients[i] = 0
+            self.doctorsMap[doctors[i]] = str(i)
+            self.doctorsNumOfPatients[str(i)] = 0
 
         for i in range(len(nurses)):
-            self.nursesMap[nurses[i]] = i
-            self.nursesNumOfPatients[i] = 0
+            self.nursesMap[nurses[i]] = str(i)
+            self.nursesNumOfPatients[str(i)] = 0
 
         for i in range(len(statuses)):
-            self.statusMap[statuses[i]] = i
-            self.statusNumOfPatients[i] = 0
+            self.statusMap[statuses[i]] = str(i)
+            self.statusNumOfPatients[str(i)] = 0
 
     def addPatient(self, dt: date, name: str, surname: str, status: str, doctor: str, nurse: str):
         mappedDoctor: int = self.doctorsMap[doctor]
@@ -288,7 +295,6 @@ class DXA(Report):
         rowForStatuses = currentRow
         currentRow += 1
 
-
         for doc, num in docs.items():
             worksheet.merge_range(currentRow, 0, currentRow, 2, doc, data_format)
             worksheet.write_number(currentRow, 3, num, data_format)
@@ -315,40 +321,224 @@ class DXA(Report):
         workbook.close()
 
 
+class ABPM(Report):
+
+    def __init__(self, month: int, year: int):
+        super().__init__(month=month, year=year)
+        self.mapWorkersAndInit()
+
+    def mapWorkersAndInit(self):
+        for i in range(len(statuses)):
+            self.statusMap[statuses[i]] = str(i)
+            self.statusNumOfPatients[str(i)] = 0
+
+    def addPatient(self, dt: date, name: str, surname: str, status: str, doctor: str | None, nurse: str | None):
+        mappedStatus: int = self.statusMap[status]
+        self.patients.append(Patient(dt=dt,
+                                     name=name,
+                                     surname=surname,
+                                     status=mappedStatus,
+                                     doctor=None,
+                                     nurse=None))
+        self.statusNumOfPatients[mappedStatus] = self.statusNumOfPatients[mappedStatus] + 1
+
+    def removePatientByIndex(self, index: int):
+        patient: Patient = self.patients.pop(index)
+        self.statusNumOfPatients[patient.status] = self.statusNumOfPatients[patient.status] - 1
+
+    def save(self, filePath: str):
+        file = open(filePath, 'w')
+        serializablePatients = [p.toDict() for p in self.patients]
+        jsonSave = {
+            'month': self.month,
+            'year': self.year,
+            'statusesMap': self.statusMap,
+            'statusNumOfPatients': self.statusNumOfPatients,
+            'patients': serializablePatients
+        }
+        json.dump(jsonSave, file)
+        file.close()
+
+    def load(self, filePath: str):
+        file = open(filePath, 'r')
+        jsonLoad = json.load(file)
+        file.close()
+        self.month = jsonLoad['month']
+        self.year = jsonLoad['year']
+        self.statusMap = jsonLoad['statusesMap']
+        self.statusNumOfPatients = jsonLoad['statusNumOfPatients']
+        self.patients = []
+        for p in jsonLoad['patients']:
+            self.patients.append(Patient(dt=datetime.strptime(p['date'], '%d/%m/%Y').date(),
+                                         name=p['name'],
+                                         surname=p['surname'],
+                                         status=p['status'],
+                                         doctor=None,
+                                         nurse=None))
+
+    def exportToXLSX(self, filePath: str):
+        workbook = xlsxwriter.Workbook(filePath)
+        worksheet = workbook.add_worksheet(mapMonth(self.month).upper())
+        header_format1 = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'bold': 'true',
+            'font_size': 11,
+            'text_wrap': 'true'
+        })
+
+        header_format2 = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'bold': 'true',
+            'font_size': 14,
+        })
+
+        data_format = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'font_size': 11
+        })
+
+        date_format = workbook.add_format({
+            'border': 1,
+            'border_color': '#000000',
+            'align': 'vcenter',
+            'center_across': 'true',
+            'font_size': 11,
+            'num_format': 'd.m.yyyy'
+        })
+
+        worksheet.merge_range(0, 0, 2, 4,
+                              'ODSEK ZA ENDOKRINOLOGIJU KARDIOVASKULARNOG SISTEMA\nI OSTEODENZITOMETRIJU',
+                              header_format1)
+        worksheet.merge_range(3, 0, 4, 4,
+                              f'MESEČNI IZVEŠTAJ ZA {mapMonth(self.month).upper()} {self.year} ABPM',
+                              header_format2)
+
+        worksheet.merge_range(5, 0, 6, 0, 'Datum', header_format1)
+        worksheet.merge_range(5, 1, 6, 3, 'Prezime i ime pacijenta', header_format1)
+        worksheet.merge_range(5, 4, 6, 4, 'Odeljenje', header_format1)
+
+        currentRow = 7
+
+        reverseMapStatus = reverseDict(self.statusMap)
+
+        for patient in self.patients:
+            worksheet.write_datetime(currentRow, 0, patient.dt, date_format)
+            worksheet.merge_range(currentRow, 1, currentRow, 3, f'{patient.surname} {patient.name}', data_format)
+            worksheet.write_string(currentRow, 4, reverseMapStatus[patient.status], data_format)
+            currentRow += 1
+
+        s = {}
+
+        statusSumNumPatients = 0
+
+        for stat, num in self.statusNumOfPatients.items():
+            if num != 0:
+                s[reverseMapStatus[stat]] = num
+                statusSumNumPatients += num
+
+        if (currentRow + len(s) + 1) > 60:
+            currentRow = 60
+        else:
+            currentRow += 2
+
+        worksheet.write_string(currentRow, 0, 'ABPM', header_format1)
+        worksheet.write_number(currentRow, 1, statusSumNumPatients, header_format1)
+
+        currentRow += 1
+
+        for st, num in s.items():
+            worksheet.write_string(currentRow, 0, st, data_format)
+            worksheet.write_number(currentRow, 1, num, data_format)
+            currentRow += 1
+
+        workbook.close()
+
+
 class ReportManager:
     def __init__(self):
-        self.dxaReports = {}
-        self.abpmReports = {}
+        importData()
+        self.reports = {}
 
-    def create(self, month: int, year: int, reportType: int):
-        if reportType == 0:
-            if (month, year) in self.dxaReports.keys():
+    def create(self, month: int, year: int, reportType: int) -> None | str:
+        try:
+            if reportType == 0:
+                self.reports[(month, year, reportType)] = DXA(month=month, year=year)
+            else:
+                self.reports[(month, year, reportType)] = ABPM(month=month, year=year)
+            return None
+        except:
+            return traceback.format_exc()
+
+    def delete(self, month: int, year: int, reportType: int) -> None | str:
+        try:
+            del self.reports[(month, year, reportType)]
+            return None
+        except:
+            return traceback.format_exc()
+
+    def save(self, month: int, year: int, reportType: int, filePath: str) -> None | str:
+        try:
+            self.reports[(month, year, reportType)].save(filePath)
+            return None
+        except:
+            return traceback.format_exc()
+
+    def load(self, filePath: str) -> None | str:
+        try:
+            extension = filePath.split('.')[1].lower()
+            if extension == 'dxa':
+                dxa = DXA(0, 0)
+                dxa.load(filePath)
+                self.reports[(dxa.month, dxa.year, 0)] = dxa
+            elif extension == 'abpm':
+                abpm = ABPM(0, 0)
+                abpm.load(filePath)
+                self.reports[(abpm.month, abpm.year, 1)] = abpm
+            else:
+                # todo FileNotSupported
                 pass
-                # todo confirm overwrite
-            self.dxaReports[(month, year)] = DXA(month=month, year=year)
-        else:
-            pass
-            # todo ABPM
+            return None
+        except:
+            return traceback.format_exc()
 
-    def save(self, report: Report, filePath: str):
-        report.save(filePath=filePath)
+    def exportToXLSX(self, month: int, year: int, reportType: int, filePath: str) -> None | str:
+        try:
+            self.reports[(month, year, reportType)].exportToXLSX(filePath)
+            return None
+        except:
+            return traceback.format_exc()
 
-    def load(self, filePath: str, reportType: int):
-        pass
-
-    def exportToXLSX(self, report: Report, filePath: str):
-        pass
+    def getReport(self, month: int, year: int, reportType: int) -> Report:
+        return self.reports[(month, year, reportType)]
 
 
-if __name__ == "__main__":
+'''if __name__ == "__main__":
     importData()
-    dxa = DXA(4, 2024)
+    manager: ReportManager = ReportManager()
+    manager.create(4, 2024, 0)
+    manager.create(4, 2024, 1)
+    dxa = manager.getReport(4, 2024, 0)
+    abpm = manager.getReport(4, 2024, 1)
     dxa.addPatient(dt=date.today(), name='Marko', surname='Gloginja', status='DB', doctor='Pavlovic Natalija',
                    nurse='Simjanovic Sandra')
     dxa.addPatient(dt=date.today(), name='Katarina', surname='Gloginja', status='L', doctor='Pavlovic Natalija',
                    nurse='Simjanovic Sandra')
     dxa.addPatient(dt=date.today(), name='Nikola', surname='Velickovic', status='G', doctor='Pavlovic Natalija',
                    nurse='Simjanovic Sandra')
+    abpm.addPatient(dt=date.today(), name='Marko', surname='Gloginja', status='C1', doctor=None, nurse=None)
+    abpm.addPatient(dt=date.today(), name='Katarina', surname='Gloginja', status='C4', doctor=None, nurse=None)
+    abpm.addPatient(dt=date.today(), name='Nikola', surname='Velickovic', status='A', doctor=None, nurse=None)
+    dxa.load('dxa.json')
+    dxa.exportToXLSX('dxa.xlsx')
     # dxa.removePatientByIndex(1)
-    dxa.exportToXLSX('test.xlsx')
-    pass
+    abpm.load('abpm.json')
+    abpm.exportToXLSX('abpm.xlsx')'''
