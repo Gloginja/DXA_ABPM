@@ -27,8 +27,7 @@ def importData():
 
 def reverseDict(d: dict) -> dict:
     reversed_dict = {}
-    while d:
-        key, value = d.popitem()
+    for key,value in d.items():
         reversed_dict[value] = key
     return reversed_dict
 
@@ -492,17 +491,19 @@ class ReportManager:
         except:
             return traceback.format_exc()
 
-    def load(self, filePath: str) -> None | str:
+    def load(self, filePath: str) -> None | DXA | ABPM | str:
         try:
             extension = filePath.split('.')[1].lower()
             if extension == 'dxa':
                 dxa = DXA(0, 0)
                 dxa.load(filePath)
                 self.reports[(dxa.month, dxa.year, 0)] = dxa
+                return dxa
             elif extension == 'abpm':
                 abpm = ABPM(0, 0)
                 abpm.load(filePath)
                 self.reports[(abpm.month, abpm.year, 1)] = abpm
+                return abpm
             else:
                 # todo FileNotSupported
                 pass

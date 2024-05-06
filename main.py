@@ -1,4 +1,5 @@
 import datetime
+import os
 
 from core import ReportManager, reverseDict, DXA
 from gui import QtWidgets, Ui_ReportGenerator, QtCore
@@ -50,8 +51,10 @@ def disableInput(mainUI: Ui_ReportGenerator):
     mainUI.generateXLSXBtn.setEnabled(False)
     mainUI.addPatientBtn.setEnabled(False)
     mainUI.inputName.setEnabled(False)
+    mainUI.inputName.setText('')
     mainUI.dateInput.setEnabled(False)
     mainUI.inputSurname.setEnabled(False)
+    mainUI.inputSurname.setText('')
     mainUI.comboStatusInput.setEnabled(False)
     mainUI.comboNurseInput.setEnabled(False)
     mainUI.comboDoctorInput.setEnabled(False)
@@ -87,6 +90,9 @@ def checkSelected(mainUI: Ui_ReportGenerator):
 
 
 def displayTable(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    mainUI.tableOfPatients.clear()
+    mainUI.tableOfPatients.setColumnCount(0)
+    mainUI.tableOfPatients.setRowCount(0)
     reportStr = mainUI.listOfReports.currentItem().text()
     reportParts = decodeSelectedReportFromList(reportStr)
     if reportParts['reportType'] == 'DXA':
@@ -113,7 +119,7 @@ def displayTable(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
         name = QtWidgets.QTableWidgetItem(p.name)
         name.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         mainUI.tableOfPatients.setItem(row, 2, name)
-        status = QtWidgets.QTableWidgetItem(p.status)
+        status = QtWidgets.QTableWidgetItem(reverseDict(report.statusMap)[p.status])
         status.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         mainUI.tableOfPatients.setItem(row, 3, status)
         if isinstance(report, DXA):
@@ -185,11 +191,69 @@ def addNewPatient(mainUI: Ui_ReportGenerator, reportManager: ReportManager):
             mainUI.tableOfPatients.setItem(row, 5, nurse)
 
 
+def clearTable(mainUI: Ui_ReportGenerator):
+    mainUI.tableOfPatients.clear()
+
+
+def deleteSelectedReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    reportStr = mainUI.listOfReports.currentItem()
+    if reportStr is not None:
+        mainUI.listOfReports.takeItem(mainUI.listOfReports.currentRow())
+        mainUI.tableOfPatients.clear()
+        mainUI.tableOfPatients.setColumnCount(0)
+        mainUI.tableOfPatients.setRowCount(0)
+        reportParts = decodeSelectedReportFromList(reportStr.text())
+        reportManager.delete(reportParts['month'], reportParts['year'], 0 if reportParts['reportType'] == 'DXA' else 1)
+        checkSelected(mainUI)
+
+
+def saveReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    reportStr = mainUI.listOfReports.currentItem()
+    if reportStr is not None:
+        reportParts = decodeSelectedReportFromList(reportStr.text())
+        fileExt = f"{'DXA (*.dxa)' if reportParts['reportType'] == 'DXA' else 'ABPM (*.apbm)'}"
+        filePath, ext = QtWidgets.QFileDialog.getSaveFileName(caption='Sačuvaj izveštaj: ', directory=os.getcwd(),
+                                                              filter=fileExt)
+        reportManager.getReport(reportParts['month'], reportParts['year'],
+                                0 if reportParts['reportType'] == 'DXA' else 1).save(filePath)
+
+
+def loadReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    fileExt = "DXA (*.dxa);;ABPM (*.apbm)"
+    filePath, ext = QtWidgets.QFileDialog.getOpenFileName(caption='Učitaj izveštaj: ', directory=os.getcwd(),
+                                                          filter=fileExt)
+    report = reportManager.load(filePath)
+    if isinstance(report, str):
+        pass
+        # todo error print
+    elif report is not None:
+        item = QtWidgets.QListWidgetItem(f'{"DXA" if isinstance(report, DXA) else "ABPM"}-{report.month}/{report.year}')
+        mainUI.listOfReports.addItem(item)
+        mainUI.listOfReports.setCurrentItem(item)
+        displayTable(reportManager, mainUI)
+        fillInputData(mainUI, reportManager)
+        checkSelected(mainUI)
+
+def generateXLSX(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    reportStr = mainUI.listOfReports.currentItem()
+    if reportStr is not None:
+        reportParts = decodeSelectedReportFromList(reportStr.text())
+        fileExt = "{XLSX (*.xlsx)"
+        filePath, ext = QtWidgets.QFileDialog.getSaveFileName(caption='Generiši xlsx izveštaj: ', directory=os.getcwd(),
+                                                              filter=fileExt)
+        reportManager.getReport(reportParts['month'], reportParts['year'],
+                                0 if reportParts['reportType'] == 'DXA' else 1).exportToXLSX(filePath)
+
 def configure(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
     fillUpData(mainUI, dialogUI)
     mainUI.createNewBtn.clicked.connect(dialogUI.newReportDialog.show)
     mainUI.addPatientBtn.clicked.connect(lambda: addNewPatient(mainUI=mainUI, reportManager=reportManager))
+    mainUI.deleteReportBtn.clicked.connect(lambda: deleteSelectedReport(mainUI=mainUI, reportManager=reportManager))
+    mainUI.saveReportBtn.clicked.connect(lambda: saveReport(mainUI=mainUI, reportManager=reportManager))
+    mainUI.loadReportBtn.clicked.connect(lambda: loadReport(mainUI=mainUI, reportManager=reportManager))
+    mainUI.generateXLSXBtn.clicked.connect(lambda: generateXLSX(mainUI=mainUI, reportManager=reportManager))
     dialogUI.buttonBox.accepted.connect(lambda: newReport(reportManager, mainUI, dialogUI))
+
     checkSelected(mainUI=mainUI)
 
 
