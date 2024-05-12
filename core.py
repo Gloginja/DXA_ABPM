@@ -115,6 +115,9 @@ class Report:
     def exportToXLSX(self, filePath: str):
         pass
 
+    def removePatientByIndex(self, index: int):
+        pass
+
 
 class DXA(Report):
 

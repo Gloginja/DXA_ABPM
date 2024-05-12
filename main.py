@@ -155,7 +155,7 @@ def fillUpData(mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
 
 def addNewPatient(mainUI: Ui_ReportGenerator, reportManager: ReportManager):
     reportStr = mainUI.listOfReports.currentItem()
-    if reportStr is not None:
+    if reportStr is not None and mainUI.inputName.text() != '' and mainUI.inputSurname.text() != '':
         reportParts = decodeSelectedReportFromList(reportStr.text())
         report = reportManager.getReport(reportParts['month'], reportParts['year'],
                                          0 if reportParts['reportType'] == 'DXA' else 1)
@@ -168,7 +168,6 @@ def addNewPatient(mainUI: Ui_ReportGenerator, reportManager: ReportManager):
                           )
         row = mainUI.tableOfPatients.rowCount()
         mainUI.tableOfPatients.insertRow(row)
-
         date = QtWidgets.QTableWidgetItem(
             f'{mainUI.dateInput.date().day()}-{mainUI.dateInput.date().month()}-{mainUI.dateInput.date().year()}')
         date.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -214,25 +213,29 @@ def saveReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
         fileExt = f"{'DXA (*.dxa)' if reportParts['reportType'] == 'DXA' else 'ABPM (*.apbm)'}"
         filePath, ext = QtWidgets.QFileDialog.getSaveFileName(caption='Sačuvaj izveštaj: ', directory=os.getcwd(),
                                                               filter=fileExt)
-        reportManager.getReport(reportParts['month'], reportParts['year'],
-                                0 if reportParts['reportType'] == 'DXA' else 1).save(filePath)
+        if filePath != '':
+            reportManager.getReport(reportParts['month'], reportParts['year'],
+                                    0 if reportParts['reportType'] == 'DXA' else 1).save(filePath)
 
 
 def loadReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
     fileExt = "DXA (*.dxa);;ABPM (*.apbm)"
     filePath, ext = QtWidgets.QFileDialog.getOpenFileName(caption='Učitaj izveštaj: ', directory=os.getcwd(),
                                                           filter=fileExt)
-    report = reportManager.load(filePath)
-    if isinstance(report, str):
-        pass
-        # todo error print
-    elif report is not None:
-        item = QtWidgets.QListWidgetItem(f'{"DXA" if isinstance(report, DXA) else "ABPM"}-{report.month}/{report.year}')
-        mainUI.listOfReports.addItem(item)
-        mainUI.listOfReports.setCurrentItem(item)
-        displayTable(reportManager, mainUI)
-        fillInputData(mainUI, reportManager)
-        checkSelected(mainUI)
+    if filePath != '':
+        report = reportManager.load(filePath)
+        if isinstance(report, str):
+            pass
+            # todo error print
+        elif report is not None:
+            item = QtWidgets.QListWidgetItem(
+                f'{"DXA" if isinstance(report, DXA) else "ABPM"}-{report.month}/{report.year}')
+            mainUI.listOfReports.addItem(item)
+            mainUI.listOfReports.setCurrentItem(item)
+            displayTable(reportManager, mainUI)
+            fillInputData(mainUI, reportManager)
+            checkSelected(mainUI)
+
 
 def generateXLSX(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
     reportStr = mainUI.listOfReports.currentItem()
@@ -241,8 +244,21 @@ def generateXLSX(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
         fileExt = "{XLSX (*.xlsx)"
         filePath, ext = QtWidgets.QFileDialog.getSaveFileName(caption='Generiši xlsx izveštaj: ', directory=os.getcwd(),
                                                               filter=fileExt)
-        reportManager.getReport(reportParts['month'], reportParts['year'],
-                                0 if reportParts['reportType'] == 'DXA' else 1).exportToXLSX(filePath)
+        if filePath != '':
+            reportManager.getReport(reportParts['month'], reportParts['year'],
+                                    0 if reportParts['reportType'] == 'DXA' else 1).exportToXLSX(filePath)
+
+
+def deleteSelectedPatient(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    row = mainUI.tableOfPatients.currentRow()
+    if row is not None and row >= 0:
+        mainUI.tableOfPatients.removeRow(row)
+        reportStr = mainUI.listOfReports.currentItem().text()
+        reportParts = decodeSelectedReportFromList(reportStr)
+        report = reportManager.getReport(reportParts['month'], reportParts['year'], 0 if reportParts['reportType'] == 'DXA' else 1)
+        report.removePatientByIndex(row)
+        mainUI.deletePatientBtn.setEnabled(False)
+
 
 def configure(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
     fillUpData(mainUI, dialogUI)
@@ -252,6 +268,7 @@ def configure(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI
     mainUI.saveReportBtn.clicked.connect(lambda: saveReport(mainUI=mainUI, reportManager=reportManager))
     mainUI.loadReportBtn.clicked.connect(lambda: loadReport(mainUI=mainUI, reportManager=reportManager))
     mainUI.generateXLSXBtn.clicked.connect(lambda: generateXLSX(mainUI=mainUI, reportManager=reportManager))
+    mainUI.deletePatientBtn.clicked.connect(lambda: deleteSelectedPatient(mainUI=mainUI, reportManager=reportManager))
     dialogUI.buttonBox.accepted.connect(lambda: newReport(reportManager, mainUI, dialogUI))
 
     checkSelected(mainUI=mainUI)
