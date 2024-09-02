@@ -1,4 +1,3 @@
-import csv
 import json
 import traceback
 
@@ -8,26 +7,31 @@ from datetime import date, datetime
 doctors = []
 nurses = []
 statuses = []
+mapStatusDesc = {}
 
 
 def importData():
     global statuses
-    doctors_f = open('res/doktori.txt', 'r')
-    nurses_f = open('res/sestre.txt', 'r')
-    statuses_f = open('res/statusi.txt', 'r')
+    doctors_f = open('res/doktori.txt', mode='r', encoding='utf-8')
+    nurses_f = open('res/sestre.txt', mode='r', encoding='utf-8')
+    statuses_f = open('res/statusi.txt', mode='r', encoding='utf-8')
     doctors.extend(doctors_f.read().splitlines())
     doctors_f.close()
     nurses.extend(nurses_f.read().splitlines())
     nurses_f.close()
-    csvreader = csv.reader(statuses_f)
-    statuses = next(csvreader)
-    del csvreader
+    for line in statuses_f:
+        if ':' in line:
+            status, desc = line.split(':')
+            statuses.append(status)
+            mapStatusDesc[status] = desc.replace('\n', '')
+        else:
+            statuses.append(line.replace('\n', ''))
     statuses_f.close()
 
 
 def reverseDict(d: dict) -> dict:
     reversed_dict = {}
-    for key,value in d.items():
+    for key, value in d.items():
         reversed_dict[value] = key
     return reversed_dict
 
@@ -58,20 +62,6 @@ def mapMonth(month: int):
             return 'nobembar'
         case 12:
             return 'decembar'
-
-
-def mapStatusFull(status: str):
-    match status:
-        case 'L':
-            return 'Ležeći - C1'
-        case 'A':
-            return 'Ambulanta'
-        case 'G':
-            return 'Gastro'
-        case 'DB':
-            return 'Dnevna Bolnica - C1'
-        case 'H':
-            return 'Hematologija'
 
 
 class Patient:
@@ -286,10 +276,10 @@ class DXA(Report):
             if num != 0:
                 s[reverseMapStatus[stat]] = num
 
-        if (currentRow + len(docs) + len(nurs) + 3) > 60:
-            currentRow = 60
-        else:
+        if (len(docs) + len(nurs) + 3) < 60 - currentRow % 60:
             currentRow += 2
+        else:
+            currentRow += 60 - currentRow % 60
 
         worksheet.merge_range(currentRow, 0, currentRow, 2, 'Ukupan broj pacijenata', header_format1)
         worksheet.write_number(currentRow, 3, doctorSumNumPatients, header_format1)
@@ -316,7 +306,7 @@ class DXA(Report):
 
         for st, num in s.items():
             worksheet.write_string(rowForStatuses, 5, st, data_format)
-            worksheet.merge_range(rowForStatuses, 6, rowForStatuses, 8, mapStatusFull(st), data_format)
+            worksheet.merge_range(rowForStatuses, 6, rowForStatuses, 8, mapStatusDesc[st], data_format)
             worksheet.write_number(rowForStatuses, 9, num, data_format)
             rowForStatuses += 1
 
@@ -447,10 +437,10 @@ class ABPM(Report):
                 s[reverseMapStatus[stat]] = num
                 statusSumNumPatients += num
 
-        if (currentRow + len(s) + 1) > 60:
-            currentRow = 60
-        else:
+        if (len(s) + 3) < 60 - currentRow % 60:
             currentRow += 2
+        else:
+            currentRow += 60 - currentRow % 60
 
         worksheet.write_string(currentRow, 0, 'ABPM', header_format1)
         worksheet.write_number(currentRow, 1, statusSumNumPatients, header_format1)

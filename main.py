@@ -1,7 +1,7 @@
 import datetime
 import os
 
-from core import ReportManager, reverseDict, DXA
+from core import ReportManager, reverseDict, DXA, Report
 from gui import QtWidgets, Ui_ReportGenerator, QtCore
 from dialog import Ui_newReportDialog
 import sys
@@ -12,8 +12,8 @@ months = {
     'Mart': 3,
     'April': 4,
     'Maj': 5,
-    'Jul': 6,
-    'Jun': 7,
+    'Jun': 6,
+    'Jul': 7,
     'Avgust': 8,
     'Septembar': 9,
     'Oktobar': 10,
@@ -30,6 +30,20 @@ def decodeSelectedReportFromList(report: str) -> dict:
     }
 
 
+def filterStatus(report: Report) -> dict:
+    if isinstance(report, DXA):
+        statusMap = {}
+        for k, v in report.statusMap.items():
+            if k.find('C') == -1:
+                statusMap[k] = v
+    else:
+        statusMap = {}
+        for k, v in report.statusMap.items():
+            if k.find('C') != -1 or k == 'A':
+                statusMap[k] = v
+    return statusMap
+
+
 def enableInput(mainUI: Ui_ReportGenerator, reportType: int):
     mainUI.deleteReportBtn.setEnabled(True)
     mainUI.inputName.setEnabled(True)
@@ -42,6 +56,9 @@ def enableInput(mainUI: Ui_ReportGenerator, reportType: int):
     if reportType == 0:
         mainUI.comboNurseInput.setEnabled(True)
         mainUI.comboDoctorInput.setEnabled(True)
+    else:
+        mainUI.comboNurseInput.setEnabled(False)
+        mainUI.comboDoctorInput.setEnabled(False)
 
 
 def disableInput(mainUI: Ui_ReportGenerator):
@@ -62,16 +79,16 @@ def disableInput(mainUI: Ui_ReportGenerator):
 
 def fillInputData(mainUI: Ui_ReportGenerator, reportManager: ReportManager):
     reportStr = mainUI.listOfReports.currentItem()
+    mainUI.comboStatusInput.clear()
+    mainUI.comboDoctorInput.clear()
+    mainUI.comboNurseInput.clear()
     if reportStr is None:
         disableInput(mainUI=mainUI)
-        mainUI.comboStatusInput.clear()
-        mainUI.comboDoctorInput.clear()
-        mainUI.comboNurseInput.clear()
     else:
         reportParts = decodeSelectedReportFromList(reportStr.text())
         report = reportManager.getReport(reportParts['month'], reportParts['year'],
                                          0 if reportParts['reportType'] == 'DXA' else 1)
-        for s in report.statusMap.keys():
+        for s in filterStatus(report):
             mainUI.comboStatusInput.addItem(s)
         if isinstance(report, DXA):
             for d in report.doctorsMap.keys():
@@ -89,6 +106,22 @@ def checkSelected(mainUI: Ui_ReportGenerator):
         enableInput(mainUI=mainUI, reportType=0 if report['reportType'] == 'DXA' else 1)
 
 
+def toggleDeletePatientButton(mainUI: Ui_ReportGenerator):
+    mainUI.deletePatientBtn.setEnabled(not mainUI.deletePatientBtn.isEnabled())
+
+
+def deleteSelectedPatient(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
+    row = mainUI.tableOfPatients.currentRow()
+    if row is not None and row >= 0:
+        mainUI.tableOfPatients.removeRow(row)
+        reportStr = mainUI.listOfReports.currentItem().text()
+        reportParts = decodeSelectedReportFromList(reportStr)
+        report = reportManager.getReport(reportParts['month'], reportParts['year'],
+                                         0 if reportParts['reportType'] == 'DXA' else 1)
+        report.removePatientByIndex(row)
+        toggleDeletePatientButton(mainUI)
+
+
 def displayTable(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
     mainUI.tableOfPatients.clear()
     mainUI.tableOfPatients.setColumnCount(0)
@@ -97,11 +130,11 @@ def displayTable(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
     reportParts = decodeSelectedReportFromList(reportStr)
     if reportParts['reportType'] == 'DXA':
         mainUI.tableOfPatients.setColumnCount(6)
-        column_headers = ['Datum', 'Prezime', 'Ime', 'Odeljenje', 'Lekar', 'Sestra/Tehničar']
+        column_headers = ['Datum', 'Prezime', 'Ime', 'Odeljenje', 'Lekar', 'Sestra/Tehničar', '']
         mainUI.tableOfPatients.setHorizontalHeaderLabels(column_headers)
     elif reportParts['reportType'] == 'ABPM':
         mainUI.tableOfPatients.setColumnCount(4)
-        column_headers = ['Datum', 'Prezime', 'Ime', 'Odeljenje']
+        column_headers = ['Datum', 'Prezime', 'Ime', 'Odeljenje', '']
         mainUI.tableOfPatients.setHorizontalHeaderLabels(column_headers)
 
     report = reportManager.getReport(reportParts['month'], reportParts['year'],
@@ -130,6 +163,8 @@ def displayTable(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
             nurse.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             mainUI.tableOfPatients.setItem(row, 5, nurse)
         row += 1
+    fillInputData(mainUI=mainUI, reportManager=reportManager)
+    checkSelected(mainUI=mainUI)
 
 
 def newReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
@@ -141,9 +176,8 @@ def newReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI
     mainUI.listOfReports.addItem(item)
     mainUI.listOfReports.setCurrentItem(item)
     displayTable(reportManager, mainUI)
-    mainUI.listOfReports.clicked.connect(lambda: displayTable(reportManager, mainUI))
-    checkSelected(mainUI=mainUI)
     fillInputData(mainUI=mainUI, reportManager=reportManager)
+    checkSelected(mainUI=mainUI)
 
 
 def fillUpData(mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
@@ -188,6 +222,8 @@ def addNewPatient(mainUI: Ui_ReportGenerator, reportManager: ReportManager):
             nurse = QtWidgets.QTableWidgetItem(mainUI.comboNurseInput.currentText())
             nurse.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             mainUI.tableOfPatients.setItem(row, 5, nurse)
+        mainUI.inputName.clear()
+        mainUI.inputSurname.clear()
 
 
 def clearTable(mainUI: Ui_ReportGenerator):
@@ -210,7 +246,7 @@ def saveReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
     reportStr = mainUI.listOfReports.currentItem()
     if reportStr is not None:
         reportParts = decodeSelectedReportFromList(reportStr.text())
-        fileExt = f"{'DXA (*.dxa)' if reportParts['reportType'] == 'DXA' else 'ABPM (*.apbm)'}"
+        fileExt = f"{'DXA (*.dxa)' if reportParts['reportType'] == 'DXA' else 'ABPM (*.abpm)'}"
         filePath, ext = QtWidgets.QFileDialog.getSaveFileName(caption='Sačuvaj izveštaj: ', directory=os.getcwd(),
                                                               filter=fileExt)
         if filePath != '':
@@ -219,7 +255,7 @@ def saveReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
 
 
 def loadReport(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
-    fileExt = "DXA (*.dxa);;ABPM (*.apbm)"
+    fileExt = "DXA (*.dxa);;ABPM (*.abpm)"
     filePath, ext = QtWidgets.QFileDialog.getOpenFileName(caption='Učitaj izveštaj: ', directory=os.getcwd(),
                                                           filter=fileExt)
     if filePath != '':
@@ -249,17 +285,6 @@ def generateXLSX(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
                                     0 if reportParts['reportType'] == 'DXA' else 1).exportToXLSX(filePath)
 
 
-def deleteSelectedPatient(reportManager: ReportManager, mainUI: Ui_ReportGenerator):
-    row = mainUI.tableOfPatients.currentRow()
-    if row is not None and row >= 0:
-        mainUI.tableOfPatients.removeRow(row)
-        reportStr = mainUI.listOfReports.currentItem().text()
-        reportParts = decodeSelectedReportFromList(reportStr)
-        report = reportManager.getReport(reportParts['month'], reportParts['year'], 0 if reportParts['reportType'] == 'DXA' else 1)
-        report.removePatientByIndex(row)
-        mainUI.deletePatientBtn.setEnabled(False)
-
-
 def configure(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI: Ui_newReportDialog):
     fillUpData(mainUI, dialogUI)
     mainUI.createNewBtn.clicked.connect(dialogUI.newReportDialog.show)
@@ -268,8 +293,10 @@ def configure(reportManager: ReportManager, mainUI: Ui_ReportGenerator, dialogUI
     mainUI.saveReportBtn.clicked.connect(lambda: saveReport(mainUI=mainUI, reportManager=reportManager))
     mainUI.loadReportBtn.clicked.connect(lambda: loadReport(mainUI=mainUI, reportManager=reportManager))
     mainUI.generateXLSXBtn.clicked.connect(lambda: generateXLSX(mainUI=mainUI, reportManager=reportManager))
-    mainUI.deletePatientBtn.clicked.connect(lambda: deleteSelectedPatient(mainUI=mainUI, reportManager=reportManager))
+    mainUI.tableOfPatients.clicked.connect(lambda: toggleDeletePatientButton(mainUI=mainUI))
+    mainUI.deletePatientBtn.clicked.connect(lambda: deleteSelectedPatient(reportManager=reportManager, mainUI=mainUI))
     dialogUI.buttonBox.accepted.connect(lambda: newReport(reportManager, mainUI, dialogUI))
+    mainUI.listOfReports.clicked.connect(lambda: displayTable(reportManager, mainUI))
 
     checkSelected(mainUI=mainUI)
 
